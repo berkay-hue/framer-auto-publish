@@ -34,7 +34,6 @@ app.post("/sync-and-publish", async (req, res) => {
     const articles = collections.find(c => c.name === "Articles")
     const fields = await articles.getFields()
 
-    // Enum case objelerini bul
     const categoryField = fields.find(f => f.name === "Category")
     const authorField = fields.find(f => f.name === "Author")
 
@@ -42,8 +41,9 @@ app.post("/sync-and-publish", async (req, res) => {
     const categoryCase = categoryField.cases.find(c => c.id === categoryId)
     const authorCase = authorField.cases.find(c => c.name === "Berkay YALÇIN")
 
-    console.log("categoryCase:", categoryCase?.id, categoryCase?.name)
-    console.log("authorCase:", authorCase?.id, authorCase?.name)
+    // Test: sadece ID string olarak ver
+    console.log("categoryCase id:", categoryCase.id)
+    console.log("authorCase id:", authorCase.id)
 
     await articles.addItems([{
       slug: slug,
@@ -51,8 +51,8 @@ app.post("/sync-and-publish", async (req, res) => {
         "t3TCWJPLf": { type: "string", value: title },
         "DGA71kQjj": { type: "string", value: title.substring(0, 150) },
         "o5sEszVRE": { type: "date", value: date || new Date().toISOString() },
-        "H4Nl31AH4": categoryCase,
-        "bIQm9YpTZ": authorCase,
+        "H4Nl31AH4": { type: "enum", value: categoryCase.id },
+        "bIQm9YpTZ": { type: "enum", value: authorCase.id },
         "LRl4pxAhv": { type: "formattedText", value: content },
         "OpICLiqiX": { type: "boolean", value: false },
         "iCkErdp4p": { type: "image", value: image_url || null }
