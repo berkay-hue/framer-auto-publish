@@ -24,16 +24,14 @@ app.post("/sync-and-publish", async (req, res) => {
     const categoryField = fields.find(f => f.name === "Category")
     const authorField = fields.find(f => f.name === "Author")
     
-    console.log("Category field:", JSON.stringify(categoryField, null, 2))
-    console.log("Author field:", JSON.stringify(authorField, null, 2))
+    console.log("=== CATEGORY CASES ===")
+    for (const c of categoryField.cases) {
+      console.log(`id: ${c.id} | name: ${c.name}`)
+    }
     
-    // cases üzerindeki tüm property'leri dene
-    if (categoryField.cases && categoryField.cases.length > 0) {
-      const c = categoryField.cases[0]
-      console.log("Case prototype methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(c)))
-      for (const key of Object.getOwnPropertyNames(c)) {
-        console.log(`Case own prop [${key}]:`, c[key])
-      }
+    console.log("=== AUTHOR CASES ===")
+    for (const c of authorField.cases) {
+      console.log(`id: ${c.id} | name: ${c.name}`)
     }
 
     await framer.disconnect()
