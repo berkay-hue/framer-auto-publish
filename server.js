@@ -19,17 +19,14 @@ app.post("/sync-and-publish", async (req, res) => {
     const framer = await connect(PROJECT_URL, API_KEY)
     const collections = await framer.getCollections()
     const articles = collections.find(c => c.name === "Articles")
-    const fields = await articles.getFields()
-
-    for (const f of fields) {
-      if (f.type === "enum") {
-        console.log(`ENUM Field: ${f.name} | ID: ${f.id}`)
-        console.log(`Cases:`, JSON.stringify(f.cases))
-      }
-    }
-
+    
+    // Mevcut itemlardan birini oku
+    const items = await articles.getItems()
+    const first = items[0]
+    console.log("Item fieldData:", JSON.stringify(first.fieldData))
+    
     await framer.disconnect()
-    res.json({ success: true })
+    res.json({ success: true, fieldData: first.fieldData })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
