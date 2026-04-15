@@ -18,16 +18,20 @@ app.post("/sync-and-publish", async (req, res) => {
   try {
     const framer = await connect(PROJECT_URL, API_KEY)
 
-    // Tüm managed collection'ları al ve sync et
-    const collections = await framer.getManagedCollections()
-    console.log("Collections bulundu:", collections.length)
-
-    for (const collection of collections) {
-      try {
-        await collection.syncManagedCollection()
-        console.log("Synced:", collection.name)
-      } catch (e) {
-        console.log("Sync skip:", e.message)
+    // Tüm collection'ları al
+    const collections = await framer.getCollections()
+    console.log("Toplam collections:", collections.length)
+    
+    for (const col of collections) {
+      console.log("Collection:", col.name, Object.keys(col))
+      // Mevcut tüm metodları dene
+      if (typeof col.sync === "function") {
+        await col.sync()
+        console.log("sync() çağrıldı:", col.name)
+      }
+      if (typeof col.syncManagedCollection === "function") {
+        await col.syncManagedCollection()
+        console.log("syncManagedCollection() çağrıldı:", col.name)
       }
     }
 
@@ -36,7 +40,7 @@ app.post("/sync-and-publish", async (req, res) => {
     await framer.deploy(result.deployment.id)
     await framer.disconnect()
 
-    res.json({ success: true, message: "Sync + Publish tamamlandı" })
+    res.json({ success: true, collections: collections.length })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
