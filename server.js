@@ -15,35 +15,29 @@ app.post("/sync-and-publish", async (req, res) => {
     return res.status(401).json({ error: "Unauthorized" })
   }
 
-  const { title, slug, content, category, date, image_url } = req.body
-  console.log("Gelen:", { title, slug, category, date })
-
   try {
     const framer = await connect(PROJECT_URL, API_KEY)
     const collections = await framer.getCollections()
     const articles = collections.find(c => c.name === "Articles")
-
-    await articles.addItems([{
-      slug: slug,
-      fieldData: {
-        "t3TCWJPLf": { type: "string", value: title },
-        "DGA71kQjj": { type: "string", value: title.substring(0, 150) },
-        "o5sEszVRE": { type: "date", value: date || new Date().toISOString() },
-        "H4Nl31AH4": { type: "enum", value: category || "Satış" },
-        "bIQm9YpTZ": { type: "enum", value: "Berkay YALÇIN" },
-        "LRl4pxAhv": { type: "formattedText", value: content },
-        "OpICLiqiX": { type: "boolean", value: false },
-        "iCkErdp4p": { type: "image", value: image_url || null }
+    const fields = await articles.getFields()
+    
+    const categoryField = fields.find(f => f.name === "Category")
+    const authorField = fields.find(f => f.name === "Author")
+    
+    console.log("Category field:", JSON.stringify(categoryField, null, 2))
+    console.log("Author field:", JSON.stringify(authorField, null, 2))
+    
+    // cases üzerindeki tüm property'leri dene
+    if (categoryField.cases && categoryField.cases.length > 0) {
+      const c = categoryField.cases[0]
+      console.log("Case prototype methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(c)))
+      for (const key of Object.getOwnPropertyNames(c)) {
+        console.log(`Case own prop [${key}]:`, c[key])
       }
-    }])
+    }
 
-    console.log("Eklendi:", title)
-
-    const result = await framer.publish()
-    await framer.deploy(result.deployment.id)
     await framer.disconnect()
-
-    res.json({ success: true, message: "Blog eklendi ve publish edildi" })
+    res.json({ success: true })
   } catch (error) {
     console.error("HATA:", error.message)
     res.status(500).json({ error: error.message })
