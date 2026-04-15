@@ -16,7 +16,7 @@ app.post("/sync-and-publish", async (req, res) => {
   }
 
   const { title, slug, content, category, date, image_url } = req.body
-  console.log("Gelen data:", { title, slug, category, date, image_url })
+  console.log("Gelen:", { title, slug, category, date })
 
   try {
     const framer = await connect(PROJECT_URL, API_KEY)
@@ -26,20 +26,19 @@ app.post("/sync-and-publish", async (req, res) => {
     await articles.addItems([{
       slug: slug,
       fieldData: {
-        "t3TCWJPLf": title,
-        "DGA71kQjj": title.substring(0, 150),
-        "o5sEszVRE": date || new Date().toISOString(),
-        "H4Nl31AH4": category || "Satış",
-        "bIQm9YpTZ": "Berkay YALÇIN",
-        "LRl4pxAhv": content,
-        "OpICLiqiX": false,
-        "iCkErdp4p": image_url ? { url: image_url } : null
+        "t3TCWJPLf": { type: "string", value: title },
+        "DGA71kQjj": { type: "string", value: title.substring(0, 150) },
+        "o5sEszVRE": { type: "date", value: date || new Date().toISOString() },
+        "H4Nl31AH4": { type: "enum", value: category || "Satış" },
+        "bIQm9YpTZ": { type: "enum", value: "Berkay YALÇIN" },
+        "LRl4pxAhv": { type: "formattedText", value: content },
+        "OpICLiqiX": { type: "boolean", value: false },
+        "iCkErdp4p": image_url ? { type: "image", value: { url: image_url } } : null
       }
     }])
 
-    console.log("Item eklendi:", title)
+    console.log("Eklendi:", title)
 
-    // Publish + Deploy
     const result = await framer.publish()
     await framer.deploy(result.deployment.id)
     await framer.disconnect()
