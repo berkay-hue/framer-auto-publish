@@ -19,22 +19,20 @@ app.post("/sync-and-publish", async (req, res) => {
     const framer = await connect(PROJECT_URL, API_KEY)
 
     const collections = await framer.getCollections()
-    console.log("Toplam collections:", collections.length)
-
-    for (const col of collections) {
-      // Tüm property ve metodları logla
-      const proto = Object.getOwnPropertyNames(Object.getPrototypeOf(col))
-      console.log("=== Collection:", col.name, "===")
-      console.log("ID:", col.id)
-      console.log("managedBy:", col.managedBy)
-      console.log("readonly:", col.readonly)
-      console.log("Metodlar:", proto.join(", "))
-      console.log("Keys:", Object.keys(col).join(", "))
-      console.log("JSON:", JSON.stringify(col))
+    
+    // Articles collection'ını bul
+    const articles = collections.find(c => c.name === "Articles")
+    console.log("Articles ID:", articles.id)
+    
+    // Field'ları çek
+    const fields = await articles.getFields()
+    console.log("=== FIELDS ===")
+    for (const f of fields) {
+      console.log(`Field: ${f.name} | ID: ${f.id} | Type: ${f.type}`)
     }
 
     await framer.disconnect()
-    res.json({ success: true, message: "Log tamamlandı" })
+    res.json({ success: true, fields: fields.map(f => ({ name: f.name, id: f.id, type: f.type })) })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
