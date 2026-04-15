@@ -8,7 +8,6 @@ const PROJECT_URL = "https://framer.com/projects/saas-corner-2--SfNhuYE6jNspJbZU
 const API_KEY = "fr_5h0sp0wxkr9fct26kjzzpbj20s"
 const SECRET = "saascorner2026"
 
-// Category name → ID map
 const CATEGORY_MAP = {
   "İş": "bp8rGNRsM",
   "Satış": "bOJnXnCqQ",
@@ -17,11 +16,6 @@ const CATEGORY_MAP = {
   "SaaS": "p1pG4Pk5e",
   "Partner": "M1Pq3h62F",
   "Firmalarımız": "rVfB4ocgT"
-}
-
-const AUTHOR_MAP = {
-  "Berkay YALÇIN": "GPItfVKF1",
-  "Yasin ÇAYIR": "m9wP5aKYn"
 }
 
 app.get("/", (req, res) => res.json({ status: "ok" }))
@@ -38,9 +32,18 @@ app.post("/sync-and-publish", async (req, res) => {
     const framer = await connect(PROJECT_URL, API_KEY)
     const collections = await framer.getCollections()
     const articles = collections.find(c => c.name === "Articles")
+    const fields = await articles.getFields()
+
+    // Enum case objelerini bul
+    const categoryField = fields.find(f => f.name === "Category")
+    const authorField = fields.find(f => f.name === "Author")
 
     const categoryId = CATEGORY_MAP[category] || CATEGORY_MAP["Satış"]
-    const authorId = AUTHOR_MAP["Berkay YALÇIN"]
+    const categoryCase = categoryField.cases.find(c => c.id === categoryId)
+    const authorCase = authorField.cases.find(c => c.name === "Berkay YALÇIN")
+
+    console.log("categoryCase:", categoryCase?.id, categoryCase?.name)
+    console.log("authorCase:", authorCase?.id, authorCase?.name)
 
     await articles.addItems([{
       slug: slug,
@@ -48,8 +51,8 @@ app.post("/sync-and-publish", async (req, res) => {
         "t3TCWJPLf": { type: "string", value: title },
         "DGA71kQjj": { type: "string", value: title.substring(0, 150) },
         "o5sEszVRE": { type: "date", value: date || new Date().toISOString() },
-        "H4Nl31AH4": { type: "enum", value: categoryId },
-        "bIQm9YpTZ": { type: "enum", value: authorId },
+        "H4Nl31AH4": categoryCase,
+        "bIQm9YpTZ": authorCase,
         "LRl4pxAhv": { type: "formattedText", value: content },
         "OpICLiqiX": { type: "boolean", value: false },
         "iCkErdp4p": { type: "image", value: image_url || null }
