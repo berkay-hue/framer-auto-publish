@@ -33,7 +33,7 @@ app.post("/sync-and-publish", async (req, res) => {
         "bIQm9YpTZ": { type: "enum", value: "Berkay YALÇIN" },
         "LRl4pxAhv": { type: "formattedText", value: content },
         "OpICLiqiX": { type: "boolean", value: false },
-        "iCkErdp4p": image_url ? { type: "image", value: { url: image_url } } : null
+        "iCkErdp4p": { type: "image", value: image_url || null }
       }
     }])
 
