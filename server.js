@@ -18,29 +18,23 @@ app.post("/sync-and-publish", async (req, res) => {
   try {
     const framer = await connect(PROJECT_URL, API_KEY)
 
-    // Tüm collection'ları al
     const collections = await framer.getCollections()
     console.log("Toplam collections:", collections.length)
-    
+
     for (const col of collections) {
-      console.log("Collection:", col.name, Object.keys(col))
-      // Mevcut tüm metodları dene
-      if (typeof col.sync === "function") {
-        await col.sync()
-        console.log("sync() çağrıldı:", col.name)
-      }
-      if (typeof col.syncManagedCollection === "function") {
-        await col.syncManagedCollection()
-        console.log("syncManagedCollection() çağrıldı:", col.name)
-      }
+      // Tüm property ve metodları logla
+      const proto = Object.getOwnPropertyNames(Object.getPrototypeOf(col))
+      console.log("=== Collection:", col.name, "===")
+      console.log("ID:", col.id)
+      console.log("managedBy:", col.managedBy)
+      console.log("readonly:", col.readonly)
+      console.log("Metodlar:", proto.join(", "))
+      console.log("Keys:", Object.keys(col).join(", "))
+      console.log("JSON:", JSON.stringify(col))
     }
 
-    // Publish + Deploy
-    const result = await framer.publish()
-    await framer.deploy(result.deployment.id)
     await framer.disconnect()
-
-    res.json({ success: true, collections: collections.length })
+    res.json({ success: true, message: "Log tamamlandı" })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
