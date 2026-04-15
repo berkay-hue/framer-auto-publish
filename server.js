@@ -17,22 +17,19 @@ app.post("/sync-and-publish", async (req, res) => {
 
   try {
     const framer = await connect(PROJECT_URL, API_KEY)
-
     const collections = await framer.getCollections()
-    
-    // Articles collection'ını bul
     const articles = collections.find(c => c.name === "Articles")
-    console.log("Articles ID:", articles.id)
-    
-    // Field'ları çek
     const fields = await articles.getFields()
-    console.log("=== FIELDS ===")
+
     for (const f of fields) {
-      console.log(`Field: ${f.name} | ID: ${f.id} | Type: ${f.type}`)
+      if (f.type === "enum") {
+        console.log(`ENUM Field: ${f.name} | ID: ${f.id}`)
+        console.log(`Cases:`, JSON.stringify(f.cases))
+      }
     }
 
     await framer.disconnect()
-    res.json({ success: true, fields: fields.map(f => ({ name: f.name, id: f.id, type: f.type })) })
+    res.json({ success: true })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: error.message })
