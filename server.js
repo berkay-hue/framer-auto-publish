@@ -28,10 +28,10 @@ app.post("/sync-and-publish", async (req, res) => {
   const { title, slug, content, category, date, image_url } = req.body
   console.log("Gelen:", { title, slug, category, date })
 
-  // Background'da çalışacak async fonksiyon
   const processInBackground = async () => {
+    let framer
     try {
-      const framer = await connect(PROJECT_URL, API_KEY)
+      framer = await connect(PROJECT_URL, API_KEY)
       const collections = await framer.getCollections()
       const articles = collections.find(c => c.name === "Articles")
       const fields = await articles.getFields()
@@ -57,22 +57,31 @@ app.post("/sync-and-publish", async (req, res) => {
       }])
       console.log("Eklendi:", title)
 
-      const result = await framer.publish()
-      console.log("Publish tamamlandı:", title)
+      try {
+        const result = await framer.publish()
+        console.log("Publish result:", JSON.stringify(result))
 
-      await framer.deploy(result.deployment.id)
-      console.log("Deploy tamamlandı:", title)
+        const deployId = result?.deployment?.id || result?.id || result?.deploymentId
+        if (deployId) {
+          await framer.deploy(deployId)
+          console.log("Deploy tamamlandı:", title)
+        } else {
+          console.log("Deploy ID bulunamadı, atlanıyor. Full result:", JSON.stringify(result))
+        }
+      } catch (publishErr) {
+        console.log("Publish/deploy hatası (blog eklendi):", publishErr.message)
+      }
 
-      await framer.disconnect()
     } catch (err) {
       console.error("Background HATA:", err.message)
+    } finally {
+      if (framer) {
+        try { await framer.disconnect() } catch (_) {}
+      }
     }
   }
 
-  // Hemen 200 dön, publish background'da devam etsin
-  res.json({ success: true, message: "Blog kuyruğa alındı, publish arka planda devam ediyor" })
-  
-  // Await etmeden çalıştır
+  res.json({ success: true, message: "Blog kuyruğa alındı" })
   processInBackground()
 })
 
