@@ -28,48 +28,52 @@ app.post("/sync-and-publish", async (req, res) => {
   const { title, slug, content, category, date, image_url } = req.body
   console.log("Gelen:", { title, slug, category, date })
 
-  try {
-    const framer = await connect(PROJECT_URL, API_KEY)
-    const collections = await framer.getCollections()
-    const articles = collections.find(c => c.name === "Articles")
-    const fields = await articles.getFields()
+  // Background'da çalışacak async fonksiyon
+  const processInBackground = async () => {
+    try {
+      const framer = await connect(PROJECT_URL, API_KEY)
+      const collections = await framer.getCollections()
+      const articles = collections.find(c => c.name === "Articles")
+      const fields = await articles.getFields()
+      const categoryField = fields.find(f => f.name === "Category")
+      const authorField = fields.find(f => f.name === "Author")
 
-    const categoryField = fields.find(f => f.name === "Category")
-    const authorField = fields.find(f => f.name === "Author")
+      const categoryId = CATEGORY_MAP[category] || CATEGORY_MAP["Satış"]
+      const categoryCase = categoryField.cases.find(c => c.id === categoryId)
+      const authorCase = authorField.cases.find(c => c.name === "Berkay YALÇIN")
 
-    const categoryId = CATEGORY_MAP[category] || CATEGORY_MAP["Satış"]
-    const categoryCase = categoryField.cases.find(c => c.id === categoryId)
-    const authorCase = authorField.cases.find(c => c.name === "Berkay YALÇIN")
+      await articles.addItems([{
+        slug: slug,
+        fieldData: {
+          "t3TCWJPLf": { type: "string", value: title },
+          "DGA71kQjj": { type: "string", value: title.substring(0, 150) },
+          "o5sEszVRE": { type: "date", value: date || new Date().toISOString() },
+          "H4Nl31AH4": { type: "enum", value: categoryCase.id },
+          "bIQm9YpTZ": { type: "enum", value: authorCase.id },
+          "LRl4pxAhv": { type: "formattedText", value: content },
+          "OpICLiqiX": { type: "boolean", value: false },
+          "iCkErdp4p": { type: "image", value: image_url || null }
+        }
+      }])
+      console.log("Eklendi:", title)
 
-    // Test: sadece ID string olarak ver
-    console.log("categoryCase id:", categoryCase.id)
-    console.log("authorCase id:", authorCase.id)
+      const result = await framer.publish()
+      console.log("Publish tamamlandı:", title)
 
-    await articles.addItems([{
-      slug: slug,
-      fieldData: {
-        "t3TCWJPLf": { type: "string", value: title },
-        "DGA71kQjj": { type: "string", value: title.substring(0, 150) },
-        "o5sEszVRE": { type: "date", value: date || new Date().toISOString() },
-        "H4Nl31AH4": { type: "enum", value: categoryCase.id },
-        "bIQm9YpTZ": { type: "enum", value: authorCase.id },
-        "LRl4pxAhv": { type: "formattedText", value: content },
-        "OpICLiqiX": { type: "boolean", value: false },
-        "iCkErdp4p": { type: "image", value: image_url || null }
-      }
-    }])
+      await framer.deploy(result.deployment.id)
+      console.log("Deploy tamamlandı:", title)
 
-    console.log("Eklendi:", title)
-
-    const result = await framer.publish()
-    await framer.deploy(result.deployment.id)
-    await framer.disconnect()
-
-    res.json({ success: true, message: "Blog eklendi ve publish edildi" })
-  } catch (error) {
-    console.error("HATA:", error.message)
-    res.status(500).json({ error: error.message })
+      await framer.disconnect()
+    } catch (err) {
+      console.error("Background HATA:", err.message)
+    }
   }
+
+  // Hemen 200 dön, publish background'da devam etsin
+  res.json({ success: true, message: "Blog kuyruğa alındı, publish arka planda devam ediyor" })
+  
+  // Await etmeden çalıştır
+  processInBackground()
 })
 
 app.listen(process.env.PORT || 3000, () => {
