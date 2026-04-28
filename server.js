@@ -20,13 +20,23 @@ const FIELDS = {
   image:     "iCkErdp4p",
 }
 
+// String'i temizle - obje gelirse içinden value'yu çıkar
+function asString(v) {
+  if (v == null) return ""
+  if (typeof v === "string") return v
+  if (typeof v === "object") {
+    if (typeof v.value === "string") return v.value
+    if (typeof v.name === "string") return v.name
+    return ""
+  }
+  return String(v)
+}
+
 app.get("/", (req, res) => res.json({ status: "ok" }))
 
-// Field ID + tip keşif endpoint'i
+// Tüm collection field tiplerini ve enum case'lerini göster
 app.get("/inspect", async (req, res) => {
-  if (req.query.secret !== SECRET) {
-    return res.status(401).json({ error: "Unauthorized" })
-  }
+  if (req.query.secret !== SECRET) return res.status(401).json({ error: "Unauthorized" })
   let framer
   try {
     framer = await connect(PROJECT_URL, API_KEY)
@@ -34,12 +44,25 @@ app.get("/inspect", async (req, res) => {
     const articles = collections.find(c => c.name === "Articles")
     const fields = await articles.getFields()
     const items = await articles.getItems()
-    const sample = items[0]
+
+    // Mevcut item'lardan benzersiz category ve author değerlerini topla
+    const usedCategories = [...new Set(items.map(i => i.fieldData?.[FIELDS.category]?.value).filter(Boolean))]
+    const usedAuthors    = [...new Set(items.map(i => i.fieldData?.[FIELDS.author]?.value).filter(Boolean))]
+
     await framer.disconnect()
     res.json({
       collectionId: articles.id,
-      fields: fields.map(f => ({ id: f.id, name: f.name, type: f.type })),
-      sampleItem: sample,
+      itemCount: items.length,
+      fields: fields.map(f => ({
+        id: f.id,
+        name: f.name,
+        type: f.type,
+        cases: f.cases || f.values || null, // enum case'leri varsa
+        full: f, // tam objeyi de göster
+      })),
+      usedCategories,
+      usedAuthors,
+      sampleItem: items[0],
     })
   } catch (e) {
     try { if (framer) await framer.disconnect() } catch(_) {}
@@ -57,15 +80,24 @@ app.post("/sync-and-publish", async (req, res) => {
   ;(async () => {
     let framer
     try {
-      const { title, slug, content, category, date, image_url, short_text, author } = req.body
+      // Body'den değerleri çek ve hepsini string'e zorla
+      const title      = asString(req.body.title)
+      const slug       = asString(req.body.slug)
+      const content    = asString(req.body.content)
+      const category   = asString(req.body.category)
+      const dateRaw    = asString(req.body.date)
+      const image_url  = asString(req.body.image_url)
+      const short_text = asString(req.body.short_text)
+      const author     = asString(req.body.author)
 
       console.log("===== YENİ BLOG =====")
       console.log("Title:", title)
       console.log("Slug:", slug)
-      console.log("Category:", category)
-      console.log("Date:", date)
+      console.log("Category (raw):", JSON.stringify(req.body.category), "→ temiz:", category)
+      console.log("Author (raw):", JSON.stringify(req.body.author), "→ temiz:", author)
+      console.log("Date:", dateRaw)
       console.log("Image:", image_url)
-      console.log("Content length:", content?.length || 0)
+      console.log("Content length:", content.length)
 
       if (!title || !slug || !content) {
         throw new Error("Eksik alan: title, slug veya content yok")
@@ -78,41 +110,63 @@ app.post("/sync-and-publish", async (req, res) => {
       const collections = await framer.getCollections()
       const articles = collections.find(c => c.name === "Articles")
       if (!articles) throw new Error("Articles collection bulunamadı")
-      console.log("✓ Articles bulundu, id:", articles.id)
+
+      // Mevcut category ve author enum case'lerini topla
+      const existingItems = await articles.getItems()
+      const validCategories = [...new Set(existingItems.map(i => i.fieldData?.[FIELDS.category]?.value).filter(Boolean))]
+      const validAuthors    = [...new Set(existingItems.map(i => i.fieldData?.[FIELDS.author]?.value).filter(Boolean))]
+      console.log("Geçerli kategoriler:", validCategories)
+      console.log("Geçerli yazarlar:", validAuthors)
 
       // Aynı slug var mı?
-      const existingItems = await articles.getItems()
       if (existingItems.find(item => item.slug === slug)) {
         console.log("⚠ Aynı slug zaten var, atlanıyor:", slug)
         return
       }
-      console.log("✓ Slug temiz, devam")
 
-      // Tarih ISO formatına
-      let isoDate
-      try {
-        isoDate = new Date(date || Date.now()).toISOString()
-      } catch {
-        isoDate = new Date().toISOString()
+      // Category'yi geçerli enum'a map'le
+      let finalCategory = category
+      if (!validCategories.includes(finalCategory)) {
+        // Tam eşleşme yoksa case-insensitive ara
+        const ci = validCategories.find(c => c.toLowerCase() === finalCategory.toLowerCase())
+        if (ci) {
+          finalCategory = ci
+          console.log("Category case düzeltildi:", category, "→", ci)
+        } else {
+          // Fallback - ilk geçerli kategori (genelde "İş")
+          finalCategory = validCategories[0] || "İş"
+          console.log("⚠ Category geçersiz, fallback kullanılıyor:", category, "→", finalCategory)
+        }
       }
 
-      // Field'ları TYPE'lı şekilde ver
+      // Author'u geçerli enum'a map'le
+      let finalAuthor = author || "Berkay YALÇIN"
+      if (!validAuthors.includes(finalAuthor)) {
+        const ci = validAuthors.find(a => a.toLowerCase() === finalAuthor.toLowerCase())
+        finalAuthor = ci || validAuthors[0] || "Berkay YALÇIN"
+      }
+
+      // Tarih
+      let isoDate
+      try { isoDate = new Date(dateRaw || Date.now()).toISOString() }
+      catch { isoDate = new Date().toISOString() }
+
       const fieldData = {
         [FIELDS.title]:     { type: "string",        value: title },
         [FIELDS.shortText]: { type: "string",        value: short_text || title.substring(0, 150) },
         [FIELDS.date]:      { type: "date",          value: isoDate },
-        [FIELDS.category]:  { type: "enum",          value: category || "Satış" },
-        [FIELDS.author]:    { type: "enum",          value: author || "Berkay YALÇIN" },
+        [FIELDS.category]:  { type: "enum",          value: finalCategory },
+        [FIELDS.author]:    { type: "enum",          value: finalAuthor },
         [FIELDS.content]:   { type: "formattedText", value: content },
         [FIELDS.featured]:  { type: "boolean",       value: false },
       }
 
-      // Image varsa ekle (value direkt string URL)
       if (image_url && image_url.startsWith("http")) {
         fieldData[FIELDS.image] = { type: "image", value: image_url }
       }
 
       console.log("→ addItems çağrılıyor...")
+      console.log("Final category:", finalCategory, "Final author:", finalAuthor)
       await articles.addItems([{ slug, fieldData }])
       console.log("✓ Item eklendi")
 
