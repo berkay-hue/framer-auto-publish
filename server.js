@@ -22,15 +22,38 @@ const FIELDS = {
 
 app.get("/", (req, res) => res.json({ status: "ok" }))
 
+// Field ID + tip keşif endpoint'i
+app.get("/inspect", async (req, res) => {
+  if (req.query.secret !== SECRET) {
+    return res.status(401).json({ error: "Unauthorized" })
+  }
+  let framer
+  try {
+    framer = await connect(PROJECT_URL, API_KEY)
+    const collections = await framer.getCollections()
+    const articles = collections.find(c => c.name === "Articles")
+    const fields = await articles.getFields()
+    const items = await articles.getItems()
+    const sample = items[0]
+    await framer.disconnect()
+    res.json({
+      collectionId: articles.id,
+      fields: fields.map(f => ({ id: f.id, name: f.name, type: f.type })),
+      sampleItem: sample,
+    })
+  } catch (e) {
+    try { if (framer) await framer.disconnect() } catch(_) {}
+    res.status(500).json({ error: e.message, stack: e.stack })
+  }
+})
+
 app.post("/sync-and-publish", async (req, res) => {
   if (req.headers["x-secret"] !== SECRET) {
     return res.status(401).json({ error: "Unauthorized" })
   }
 
-  // n8n hemen devam etsin
   res.json({ success: true, message: "Blog kuyruğa alındı" })
 
-  // Background işlem
   ;(async () => {
     let framer
     try {
@@ -52,39 +75,45 @@ app.post("/sync-and-publish", async (req, res) => {
       framer = await connect(PROJECT_URL, API_KEY)
       console.log("✓ Baglandı")
 
-      console.log("→ Collections alınıyor...")
       const collections = await framer.getCollections()
       const articles = collections.find(c => c.name === "Articles")
-      if (!articles) {
-        throw new Error("Articles collection bulunamadı")
-      }
+      if (!articles) throw new Error("Articles collection bulunamadı")
       console.log("✓ Articles bulundu, id:", articles.id)
 
-      // Aynı slug var mı kontrol et
-      console.log("→ Mevcut item'lar kontrol ediliyor...")
+      // Aynı slug var mı?
       const existingItems = await articles.getItems()
-      const duplicate = existingItems.find(item => item.slug === slug)
-      if (duplicate) {
+      if (existingItems.find(item => item.slug === slug)) {
         console.log("⚠ Aynı slug zaten var, atlanıyor:", slug)
         return
       }
       console.log("✓ Slug temiz, devam")
 
-      console.log("→ addItems çağrılıyor...")
-      const newItem = {
-        slug: slug,
-        fieldData: {
-          [FIELDS.title]:     title,
-          [FIELDS.shortText]: short_text || title.substring(0, 150),
-          [FIELDS.date]:      date || new Date().toISOString(),
-          [FIELDS.category]:  category || "Satış",
-          [FIELDS.author]:    author || "Berkay YALÇIN",
-          [FIELDS.content]:   content,
-          [FIELDS.featured]:  false,
-          [FIELDS.image]:     image_url || "",
-        }
+      // Tarih ISO formatına
+      let isoDate
+      try {
+        isoDate = new Date(date || Date.now()).toISOString()
+      } catch {
+        isoDate = new Date().toISOString()
       }
-      await articles.addItems([newItem])
+
+      // Field'ları TYPE'lı şekilde ver
+      const fieldData = {
+        [FIELDS.title]:     { type: "string",        value: title },
+        [FIELDS.shortText]: { type: "string",        value: short_text || title.substring(0, 150) },
+        [FIELDS.date]:      { type: "date",          value: isoDate },
+        [FIELDS.category]:  { type: "enum",          value: category || "Satış" },
+        [FIELDS.author]:    { type: "enum",          value: author || "Berkay YALÇIN" },
+        [FIELDS.content]:   { type: "formattedText", value: content },
+        [FIELDS.featured]:  { type: "boolean",       value: false },
+      }
+
+      // Image varsa ekle
+      if (image_url && image_url.startsWith("http")) {
+        fieldData[FIELDS.image] = { type: "image", value: { url: image_url } }
+      }
+
+      console.log("→ addItems çağrılıyor...")
+      await articles.addItems([{ slug, fieldData }])
       console.log("✓ Item eklendi")
 
       console.log("→ Publish çağrılıyor...")
@@ -102,10 +131,6 @@ app.post("/sync-and-publish", async (req, res) => {
       console.error("Message:", error.message)
       console.error("Name:", error.name)
       console.error("Stack:", error.stack)
-      if (error.response) {
-        console.error("Response status:", error.response.status)
-        console.error("Response data:", JSON.stringify(error.response.data))
-      }
       console.error("Full:", JSON.stringify(error, Object.getOwnPropertyNames(error)))
       console.error("=======================")
       try { if (framer) await framer.disconnect() } catch(e) {}
