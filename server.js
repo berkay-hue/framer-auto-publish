@@ -107,9 +107,9 @@ app.post("/sync-and-publish", async (req, res) => {
         [FIELDS.featured]:  { type: "boolean",       value: false },
       }
 
-      // Image varsa ekle
+      // Image varsa ekle (value direkt string URL)
       if (image_url && image_url.startsWith("http")) {
-        fieldData[FIELDS.image] = { type: "image", value: { url: image_url } }
+        fieldData[FIELDS.image] = { type: "image", value: image_url }
       }
 
       console.log("→ addItems çağrılıyor...")
