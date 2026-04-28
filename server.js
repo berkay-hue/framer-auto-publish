@@ -8,7 +8,6 @@ const PROJECT_URL = "https://framer.com/projects/saas-corner-2--SfNhuYE6jNspJbZU
 const API_KEY = "fr_5h0sp0wxkr9fct26kjzzpbj20s"
 const SECRET = "saascorner2026"
 
-// Articles collection field ID'leri
 const FIELDS = {
   title:     "t3TCWJPLf",
   shortText: "DGA71kQjj",
@@ -20,13 +19,13 @@ const FIELDS = {
   image:     "iCkErdp4p",
 }
 
-// String'i temizle - obje gelirse içinden value'yu çıkar
 function asString(v) {
   if (v == null) return ""
   if (typeof v === "string") return v
   if (typeof v === "object") {
     if (typeof v.value === "string") return v.value
     if (typeof v.name === "string") return v.name
+    if (typeof v.id === "string") return v.id
     return ""
   }
   return String(v)
@@ -34,8 +33,8 @@ function asString(v) {
 
 app.get("/", (req, res) => res.json({ status: "ok" }))
 
-// Tüm collection field tiplerini ve enum case'lerini göster
-app.get("/inspect", async (req, res) => {
+// Enum case'lerini DERİN incele
+app.get("/inspect-deep", async (req, res) => {
   if (req.query.secret !== SECRET) return res.status(401).json({ error: "Unauthorized" })
   let framer
   try {
@@ -43,26 +42,63 @@ app.get("/inspect", async (req, res) => {
     const collections = await framer.getCollections()
     const articles = collections.find(c => c.name === "Articles")
     const fields = await articles.getFields()
-    const items = await articles.getItems()
 
-    // Mevcut item'lardan benzersiz category ve author değerlerini topla
-    const usedCategories = [...new Set(items.map(i => i.fieldData?.[FIELDS.category]?.value).filter(Boolean))]
-    const usedAuthors    = [...new Set(items.map(i => i.fieldData?.[FIELDS.author]?.value).filter(Boolean))]
-
-    await framer.disconnect()
-    res.json({
-      collectionId: articles.id,
-      itemCount: items.length,
-      fields: fields.map(f => ({
+    const result = []
+    for (const f of fields) {
+      const info = {
         id: f.id,
         name: f.name,
         type: f.type,
-        cases: f.cases || f.values || null, // enum case'leri varsa
-        full: f, // tam objeyi de göster
-      })),
-      usedCategories,
-      usedAuthors,
-      sampleItem: items[0],
+        ownKeys: Object.getOwnPropertyNames(f),
+        keys: Object.keys(f),
+      }
+      if (f.cases) {
+        info.cases = f.cases.map(c => ({
+          ownKeys: Object.getOwnPropertyNames(c),
+          keys: Object.keys(c),
+          // Tüm property'leri tek tek dene
+          id: c.id,
+          name: c.name,
+          value: c.value,
+          label: c.label,
+          // toString
+          str: String(c),
+          // tüm own + enumerable property'leri ortaya çıkar
+          dump: JSON.parse(JSON.stringify(c, Object.getOwnPropertyNames(c))),
+        }))
+      }
+      result.push(info)
+    }
+
+    await framer.disconnect()
+    res.json({ fields: result })
+  } catch (e) {
+    try { if (framer) await framer.disconnect() } catch(_) {}
+    res.status(500).json({ error: e.message, stack: e.stack })
+  }
+})
+
+// Test: VAR olan bir item'ın category'sini başka bir geçerli değere çevirebilir miyiz?
+app.get("/test-update", async (req, res) => {
+  if (req.query.secret !== SECRET) return res.status(401).json({ error: "Unauthorized" })
+  let framer
+  try {
+    framer = await connect(PROJECT_URL, API_KEY)
+    const collections = await framer.getCollections()
+    const articles = collections.find(c => c.name === "Articles")
+    const items = await articles.getItems()
+    const sample = items[0]
+
+    // Mevcut fieldData'yı aynen geri yaz - hangi metod var?
+    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(articles))
+      .concat(Object.getOwnPropertyNames(articles))
+    
+    await framer.disconnect()
+    res.json({
+      sampleItemId: sample.id,
+      sampleSlug: sample.slug,
+      sampleCategory: sample.fieldData[FIELDS.category],
+      collectionMethods: methods,
     })
   } catch (e) {
     try { if (framer) await framer.disconnect() } catch(_) {}
@@ -74,13 +110,11 @@ app.post("/sync-and-publish", async (req, res) => {
   if (req.headers["x-secret"] !== SECRET) {
     return res.status(401).json({ error: "Unauthorized" })
   }
-
   res.json({ success: true, message: "Blog kuyruğa alındı" })
 
   ;(async () => {
     let framer
     try {
-      // Body'den değerleri çek ve hepsini string'e zorla
       const title      = asString(req.body.title)
       const slug       = asString(req.body.slug)
       const content    = asString(req.body.content)
@@ -91,62 +125,48 @@ app.post("/sync-and-publish", async (req, res) => {
       const author     = asString(req.body.author)
 
       console.log("===== YENİ BLOG =====")
-      console.log("Title:", title)
-      console.log("Slug:", slug)
-      console.log("Category (raw):", JSON.stringify(req.body.category), "→ temiz:", category)
-      console.log("Author (raw):", JSON.stringify(req.body.author), "→ temiz:", author)
-      console.log("Date:", dateRaw)
-      console.log("Image:", image_url)
-      console.log("Content length:", content.length)
+      console.log("category typeof:", typeof category, "value:", JSON.stringify(category))
+      console.log("author typeof:", typeof author, "value:", JSON.stringify(author))
 
-      if (!title || !slug || !content) {
-        throw new Error("Eksik alan: title, slug veya content yok")
-      }
+      if (!title || !slug || !content) throw new Error("Eksik alan")
 
-      console.log("→ Framer'a baglanılıyor...")
       framer = await connect(PROJECT_URL, API_KEY)
-      console.log("✓ Baglandı")
-
       const collections = await framer.getCollections()
       const articles = collections.find(c => c.name === "Articles")
-      if (!articles) throw new Error("Articles collection bulunamadı")
 
-      // Mevcut category ve author enum case'lerini topla
       const existingItems = await articles.getItems()
       const validCategories = [...new Set(existingItems.map(i => i.fieldData?.[FIELDS.category]?.value).filter(Boolean))]
       const validAuthors    = [...new Set(existingItems.map(i => i.fieldData?.[FIELDS.author]?.value).filter(Boolean))]
-      console.log("Geçerli kategoriler:", validCategories)
-      console.log("Geçerli yazarlar:", validAuthors)
 
-      // Aynı slug var mı?
       if (existingItems.find(item => item.slug === slug)) {
-        console.log("⚠ Aynı slug zaten var, atlanıyor:", slug)
+        console.log("⚠ Aynı slug zaten var")
         return
       }
 
-      // Category'yi geçerli enum'a map'le
-      let finalCategory = category
-      if (!validCategories.includes(finalCategory)) {
-        // Tam eşleşme yoksa case-insensitive ara
-        const ci = validCategories.find(c => c.toLowerCase() === finalCategory.toLowerCase())
-        if (ci) {
-          finalCategory = ci
-          console.log("Category case düzeltildi:", category, "→", ci)
-        } else {
-          // Fallback - ilk geçerli kategori (genelde "İş")
-          finalCategory = validCategories[0] || "İş"
-          console.log("⚠ Category geçersiz, fallback kullanılıyor:", category, "→", finalCategory)
-        }
+      // Category enum case'ini bul (mevcut item'lardan)
+      const sampleWithCategory = existingItems.find(i =>
+        i.fieldData?.[FIELDS.category]?.value === category ||
+        i.fieldData?.[FIELDS.category]?.value?.toLowerCase() === category.toLowerCase()
+      )
+      let categoryFieldValue
+      if (sampleWithCategory) {
+        // Mevcut bir item'ın category fieldData'sını AYNEN kopyala
+        categoryFieldValue = sampleWithCategory.fieldData[FIELDS.category]
+        console.log("Category mevcut item'dan kopyalandı:", JSON.stringify(categoryFieldValue))
+      } else {
+        // Fallback - ilk item'ın category'sini al
+        categoryFieldValue = existingItems[0].fieldData[FIELDS.category]
+        console.log("⚠ Category bulunamadı, fallback:", JSON.stringify(categoryFieldValue))
       }
 
-      // Author'u geçerli enum'a map'le
-      let finalAuthor = author || "Berkay YALÇIN"
-      if (!validAuthors.includes(finalAuthor)) {
-        const ci = validAuthors.find(a => a.toLowerCase() === finalAuthor.toLowerCase())
-        finalAuthor = ci || validAuthors[0] || "Berkay YALÇIN"
-      }
+      const sampleWithAuthor = existingItems.find(i =>
+        i.fieldData?.[FIELDS.author]?.value === author
+      )
+      const authorFieldValue = sampleWithAuthor
+        ? sampleWithAuthor.fieldData[FIELDS.author]
+        : existingItems[0].fieldData[FIELDS.author]
+      console.log("Author kopyalandı:", JSON.stringify(authorFieldValue))
 
-      // Tarih
       let isoDate
       try { isoDate = new Date(dateRaw || Date.now()).toISOString() }
       catch { isoDate = new Date().toISOString() }
@@ -155,8 +175,8 @@ app.post("/sync-and-publish", async (req, res) => {
         [FIELDS.title]:     { type: "string",        value: title },
         [FIELDS.shortText]: { type: "string",        value: short_text || title.substring(0, 150) },
         [FIELDS.date]:      { type: "date",          value: isoDate },
-        [FIELDS.category]:  { type: "enum",          value: finalCategory },
-        [FIELDS.author]:    { type: "enum",          value: finalAuthor },
+        [FIELDS.category]:  categoryFieldValue,           // mevcut item'dan kopyalandı
+        [FIELDS.author]:    authorFieldValue,             // mevcut item'dan kopyalandı
         [FIELDS.content]:   { type: "formattedText", value: content },
         [FIELDS.featured]:  { type: "boolean",       value: false },
       }
@@ -165,28 +185,21 @@ app.post("/sync-and-publish", async (req, res) => {
         fieldData[FIELDS.image] = { type: "image", value: image_url }
       }
 
-      console.log("→ addItems çağrılıyor...")
-      console.log("Final category:", finalCategory, "Final author:", finalAuthor)
+      console.log("→ addItems çağrılıyor, fieldData:", JSON.stringify(fieldData).substring(0, 500))
       await articles.addItems([{ slug, fieldData }])
       console.log("✓ Item eklendi")
 
-      console.log("→ Publish çağrılıyor...")
       const result = await framer.publish()
-      console.log("✓ Publish OK, deployment id:", result.deployment.id)
-
-      console.log("→ Deploy çağrılıyor...")
+      console.log("✓ Publish OK")
       await framer.deploy(result.deployment.id)
       console.log("✓ Deploy tamamlandı")
 
       await framer.disconnect()
-      console.log("===== TÜM İŞLEM TAMAM =====")
+      console.log("===== TAMAM =====")
     } catch (error) {
-      console.error("===== HATA DETAYI =====")
+      console.error("===== HATA =====")
       console.error("Message:", error.message)
-      console.error("Name:", error.name)
-      console.error("Stack:", error.stack)
       console.error("Full:", JSON.stringify(error, Object.getOwnPropertyNames(error)))
-      console.error("=======================")
       try { if (framer) await framer.disconnect() } catch(e) {}
     }
   })()
