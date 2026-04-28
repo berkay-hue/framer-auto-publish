@@ -8,7 +8,6 @@ const PROJECT_URL = "https://framer.com/projects/saas-corner-2--SfNhuYE6jNspJbZU
 const API_KEY = "fr_5h0sp0wxkr9fct26kjzzpbj20s"
 const SECRET = "saascorner2026"
 
-// Articles collection field ID'leri (Category ve Author kaldırıldı)
 const FIELDS = {
   title:     "t3TCWJPLf",
   shortText: "DGA71kQjj",
@@ -29,9 +28,16 @@ function asString(v) {
   return String(v)
 }
 
+// Process-level error handler (en önemli ekleme)
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("⚠️ UNHANDLED REJECTION:", reason)
+})
+process.on("uncaughtException", (err) => {
+  console.error("⚠️ UNCAUGHT EXCEPTION:", err.message, err.stack)
+})
+
 app.get("/", (req, res) => res.json({ status: "ok" }))
 
-// Field tiplerini görmek için (debug)
 app.get("/inspect", async (req, res) => {
   if (req.query.secret !== SECRET) return res.status(401).json({ error: "Unauthorized" })
   let framer
@@ -54,6 +60,46 @@ app.get("/inspect", async (req, res) => {
   }
 })
 
+// Sadece publish endpoint'i (eklenmiş item'ı yayına almak için manuel)
+app.post("/publish-only", async (req, res) => {
+  if (req.headers["x-secret"] !== SECRET) {
+    return res.status(401).json({ error: "Unauthorized" })
+  }
+  res.json({ success: true, message: "Publish başlatıldı" })
+
+  ;(async () => {
+    let framer
+    try {
+      console.log("===== MANUEL PUBLISH =====")
+      console.log("→ Framer'a baglanılıyor...")
+      framer = await connect(PROJECT_URL, API_KEY)
+      console.log("✓ Baglandı")
+
+      console.log("→ Publish çağrılıyor (timeout: 5dk)...")
+      const result = await Promise.race([
+        framer.publish(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Publish timeout 5dk")), 300000))
+      ])
+      console.log("✓ Publish OK, deployment id:", result.deployment.id)
+
+      console.log("→ Deploy çağrılıyor (timeout: 5dk)...")
+      await Promise.race([
+        framer.deploy(result.deployment.id),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Deploy timeout 5dk")), 300000))
+      ])
+      console.log("✓ Deploy tamamlandı")
+
+      await framer.disconnect()
+      console.log("===== PUBLISH TAMAM =====")
+    } catch (error) {
+      console.error("===== PUBLISH HATASI =====")
+      console.error("Message:", error.message)
+      console.error("Stack:", error.stack)
+      try { if (framer) await framer.disconnect() } catch(e) {}
+    }
+  })()
+})
+
 app.post("/sync-and-publish", async (req, res) => {
   if (req.headers["x-secret"] !== SECRET) {
     return res.status(401).json({ error: "Unauthorized" })
@@ -73,13 +119,8 @@ app.post("/sync-and-publish", async (req, res) => {
       console.log("===== YENİ BLOG =====")
       console.log("Title:", title)
       console.log("Slug:", slug)
-      console.log("Date:", dateRaw)
-      console.log("Image:", image_url)
-      console.log("Content length:", content.length)
 
-      if (!title || !slug || !content) {
-        throw new Error("Eksik alan: title, slug veya content yok")
-      }
+      if (!title || !slug || !content) throw new Error("Eksik alan")
 
       console.log("→ Framer'a baglanılıyor...")
       framer = await connect(PROJECT_URL, API_KEY)
@@ -87,16 +128,15 @@ app.post("/sync-and-publish", async (req, res) => {
 
       const collections = await framer.getCollections()
       const articles = collections.find(c => c.name === "Articles")
-      if (!articles) throw new Error("Articles collection bulunamadı")
+      if (!articles) throw new Error("Articles bulunamadı")
 
-      // Aynı slug var mı?
       const existingItems = await articles.getItems()
       if (existingItems.find(item => item.slug === slug)) {
-        console.log("⚠ Aynı slug zaten var, atlanıyor:", slug)
+        console.log("⚠ Aynı slug zaten var, atlanıyor")
+        await framer.disconnect()
         return
       }
 
-      // Tarih
       let isoDate
       try { isoDate = new Date(dateRaw || Date.now()).toISOString() }
       catch { isoDate = new Date().toISOString() }
@@ -117,21 +157,31 @@ app.post("/sync-and-publish", async (req, res) => {
       await articles.addItems([{ slug, fieldData }])
       console.log("✓ Item eklendi")
 
-      console.log("→ Publish çağrılıyor...")
-      const result = await framer.publish()
+      // ÖNEMLİ: addItems ile publish/deploy arasına nefes ver
+      // Framer'ın internal state güncellenmesi için
+      await new Promise(r => setTimeout(r, 2000))
+      console.log("→ 2sn bekledikten sonra publish başlıyor...")
+
+      const result = await Promise.race([
+        framer.publish(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Publish timeout 5dk")), 300000))
+      ])
       console.log("✓ Publish OK, deployment id:", result.deployment.id)
 
-      console.log("→ Deploy çağrılıyor...")
-      await framer.deploy(result.deployment.id)
+      console.log("→ Deploy çağrılıyor (timeout: 5dk)...")
+      await Promise.race([
+        framer.deploy(result.deployment.id),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Deploy timeout 5dk")), 300000))
+      ])
       console.log("✓ Deploy tamamlandı")
 
       await framer.disconnect()
       console.log("===== TÜM İŞLEM TAMAM =====")
     } catch (error) {
-      console.error("===== HATA DETAYI =====")
+      console.error("===== HATA =====")
       console.error("Message:", error.message)
+      console.error("Stack:", error.stack)
       console.error("Full:", JSON.stringify(error, Object.getOwnPropertyNames(error)))
-      console.error("=======================")
       try { if (framer) await framer.disconnect() } catch(e) {}
     }
   })()
